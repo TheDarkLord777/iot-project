@@ -29,13 +29,13 @@ jobs:
           npm run build || echo "Build failed"
           echo "Build process complete."
           echo "Build directory contents:"
-          ls -la build
+          ls -la dist
 
       # 4. Build katalogni tekshirish
       - name: Verify build directory
         run: |
           echo "Verifying build directory..."
-          if [ ! -d "build" ]; then
+          if [ ! -d "dist" ]; then
             echo "Build directory not found!"
             exit 1
           fi
