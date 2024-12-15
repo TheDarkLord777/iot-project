@@ -29,13 +29,15 @@ const App = () => {
   const mqttConfig = {
     host: '100.42.181.66',
     port: 9001,
-    protocol: 'ws', // Changed to ws since we're using WebSocket
+    protocol: 'ws',
     clientId: `piano_client_${Math.random().toString(16).slice(2, 8)}`
   };
 
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [debug, setDebug] = useState<{note: string, timestamp: number}[]>([]);
+  const [keyPressTime, setKeyPressTime] = useState<number | null>(null);
+  const [debug, setDebug] = useState<{note: string, duration: number}[]>([]);
+  const [holdDuration, setHoldDuration] = useState<number | null>(null);
 
   useEffect(() => {
     // Create MQTT client
@@ -45,7 +47,6 @@ const App = () => {
 
     mqttClient.on('connect', () => {
       console.log('Connected to MQTT broker');
-      // Subscribe to piano topic
       mqttClient.subscribe('piano', (err) => {
         if (err) {
           console.error('Subscription error:', err);
@@ -74,11 +75,23 @@ const App = () => {
     // Handle keyboard events
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = pianoKeys.find(k => k.key === e.key.toLowerCase());
-      if (key && client) {
+      if (key && client && !keyPressTime) { // Check if key isn't already pressed
         setActiveKey(key.note);
+        setKeyPressTime(Date.now()); // Store full timestamp
+        setHoldDuration(null); // Reset hold duration
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const key = pianoKeys.find(k => k.key === e.key.toLowerCase());
+      if (key && client && keyPressTime) {
+        // Always set duration to 500ms
+        const duration = 500;
+        setHoldDuration(duration);
+        
         const noteData = {
           note: key.note,
-          timestamp: Date.now()
+          duration: duration
         };
         
         // Publish note to MQTT topic
@@ -92,11 +105,9 @@ const App = () => {
         
         // Add to debug log
         setDebug(prev => [...prev, noteData]);
+        setActiveKey(null);
+        setKeyPressTime(null);
       }
-    };
-
-    const handleKeyUp = () => {
-      setActiveKey(null);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -106,7 +117,7 @@ const App = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [client]); // Added client to dependency array
+  }, [client, keyPressTime]);
 
   // Styles
   const pianoStyles = {
@@ -147,25 +158,35 @@ const App = () => {
   const handlePianoClick = (note: string) => {
     if (client) {
       setActiveKey(note);
-      const noteData = {
-        note: note,
-        timestamp: Date.now()
+      setKeyPressTime(Date.now());
+      setHoldDuration(null);
+      
+      const handleMouseUp = () => {
+        // Always set duration to 500ms
+        const duration = 500;
+        setHoldDuration(duration);
+        
+        const noteData = {
+          note: note,
+          duration: duration
+        };
+        
+        client.publish('piano', JSON.stringify(noteData), { qos: 1 }, (error) => {
+          if (error) {
+            console.error('MQTT publish error:', error);
+          } else {
+            console.log('Published message:', noteData);
+          }
+        });
+        
+        setDebug(prev => [...prev, noteData]);
+        setActiveKey(null);
+        setKeyPressTime(null);
+        
+        document.removeEventListener('mouseup', handleMouseUp);
       };
       
-      // Publish note to MQTT topic when clicking piano
-      client.publish('piano', JSON.stringify(noteData), { qos: 1 }, (error) => {
-        if (error) {
-          console.error('MQTT publish error:', error);
-        } else {
-          console.log('Published message:', noteData);
-        }
-      });
-      
-      // Add to debug log
-      setDebug(prev => [...prev, noteData]);
-      
-      // Reset active key after a short delay
-      setTimeout(() => setActiveKey(null), 200);
+      document.addEventListener('mouseup', handleMouseUp);
     }
   };
 
@@ -176,9 +197,19 @@ const App = () => {
           <div
             key={key.note}
             style={pianoStyles.key(key.isBlack || false, activeKey === key.note)}
-            onClick={() => handlePianoClick(key.note)}
+            onMouseDown={() => handlePianoClick(key.note)}
           >
             <div>{key.note}</div>
+            {activeKey === key.note && keyPressTime && (
+              <div style={{fontSize: '12px', color: key.isBlack ? '#fff' : '#000'}}>
+                500ms
+              </div>
+            )}
+            {holdDuration && key.note === activeKey && (
+              <div style={{fontSize: '12px', color: key.isBlack ? '#fff' : '#000'}}>
+                Held: 500ms
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -188,7 +219,7 @@ const App = () => {
         <h3>Debug Log:</h3>
         {debug.map((entry, index) => (
           <div key={index}>
-            Note: {entry.note} - Time: {new Date(entry.timestamp).toLocaleTimeString()}
+            Note: {entry.note} - Duration: {entry.duration}ms
           </div>
         ))}
       </div>
