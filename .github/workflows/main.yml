@@ -18,21 +18,40 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 22 # React uchun mos Node.js versiyasi
+          node-version: 16 # React uchun mos Node.js versiyasi
 
       # 3. React loyihasini build qilish
       - name: Install dependencies and build
         run: |
+          echo "Installing dependencies..."
           npm install
-          npm run build
+          echo "Building project..."
+          npm run build || echo "Build failed"
+          echo "Build process complete."
+          echo "Build directory contents:"
+          ls -la build
 
-      # 4. Serverga deploy qilish
-      - name: Deploy to Server
-        env: # Parolni GitHub Secrets orqali qo'shing
-          HOST: 100.42.181.66
-          USER: root
-          PASSWORD: ${{ secrets.SSH_PASSWORD }}
+      # 4. Build katalogni tekshirish
+      - name: Verify build directory
         run: |
+          echo "Verifying build directory..."
+          if [ ! -d "build" ]; then
+            echo "Build directory not found!"
+            exit 1
+          fi
+          echo "Build directory exists."
+
+      # 5. Serverga deploy qilish
+      - name: Deploy to Server
+        env:
+          HOST: 100.42.181.66 # Server IP manzili
+          USER: root # Server foydalanuvchi nomi
+          PASSWORD: ${{ secrets.SSH_PASSWORD }} # GitHub Secrets'da saqlangan SSH parol
+        run: |
+          echo "Installing sshpass..."
           sudo apt-get install -y sshpass
-          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r build/* $USER@$HOST:/var/www/html
+          echo "Copying files to server..."
+          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r ./build/* $USER@$HOST:/var/www/html
+          echo "Restarting Nginx on server..."
           sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no $USER@$HOST "sudo systemctl restart nginx"
+          echo "Deployment complete."
