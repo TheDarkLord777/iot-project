@@ -51,7 +51,7 @@ jobs:
           echo "Installing sshpass..."
           sudo apt-get install -y sshpass
           echo "Copying files to server..."
-          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r ./build/* $USER@$HOST:/var/www/html
+          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r ./dist/* $USER@$HOST:/var/www/html
           echo "Restarting Nginx on server..."
           sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no $USER@$HOST "sudo systemctl restart nginx"
           echo "Deployment complete."
