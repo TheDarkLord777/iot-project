@@ -1,0 +1,38 @@
+name: React Build and Deploy
+
+on:
+  push:
+    branches:
+      - main # Faqat "main" branchga push qilinganda trigger bo‘ladi
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Kodni yuklash
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # 2. Node.js o'rnatish
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22 # React uchun mos Node.js versiyasi
+
+      # 3. React loyihasini build qilish
+      - name: Install dependencies and build
+        run: |
+          npm install
+          npm run build
+
+      # 4. Serverga deploy qilish
+      - name: Deploy to Server
+        env: # Parolni GitHub Secrets orqali qo'shing
+          HOST: 100.42.181.66
+          USER: root
+          PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass
+          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r build/* $USER@$HOST:/var/www/html
+          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no $USER@$HOST "sudo systemctl restart nginx"
