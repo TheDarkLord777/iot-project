@@ -35,9 +35,9 @@ const App = () => {
 
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [keyPressTime, setKeyPressTime] = useState<number | null>(null);
+  const [holdDuration, setHoldDuration] = useState<number>(0);
   const [debug, setDebug] = useState<{note: string, duration: number}[]>([]);
-  const [holdDuration, setHoldDuration] = useState<number | null>(null);
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Create MQTT client
@@ -72,29 +72,33 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    // Handle keyboard events
+    // Handle keyboard events with duration tracking
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = pianoKeys.find(k => k.key === e.key.toLowerCase());
-      if (key && client && !keyPressTime) { // Check if key isn't already pressed
+      if (key && client && !intervalId) {
         setActiveKey(key.note);
-        setKeyPressTime(Date.now()); // Store full timestamp
-        setHoldDuration(null); // Reset hold duration
+        setHoldDuration(0);
+        
+        const interval = setInterval(() => {
+          setHoldDuration(prev => prev + 10); // Increment by 10ms
+        }, 10);
+        
+        setIntervalId(interval);
       }
     };
+    
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = pianoKeys.find(k => k.key === e.key.toLowerCase());
-      if (key && client && keyPressTime) {
-        // Always set duration to 500ms
-        const duration = 500;
-        setHoldDuration(duration);
+      if (key && client && intervalId) {
+        clearInterval(intervalId);
         
         const noteData = {
           note: key.note,
-          duration: duration
+          duration: holdDuration  // Use the actual tracked duration
         };
         
-        // Publish note to MQTT topic
+        // Publish note to MQTT topic before resetting
         client.publish('piano', JSON.stringify(noteData), { qos: 1 }, (error) => {
           if (error) {
             console.error('MQTT publish error:', error);
@@ -103,12 +107,12 @@ const App = () => {
           }
         });
         
-        // Add to debug log
+        // Reset state AFTER publishing
         setDebug(prev => [...prev, noteData]);
         setActiveKey(null);
-        setKeyPressTime(null);
-      }
-    };
+        setIntervalId(null);
+        setHoldDuration(0);
+      }}
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -116,8 +120,11 @@ const App = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
-  }, [client, keyPressTime]);
+  }, [client, intervalId]);
 
   // Styles
   const pianoStyles = {
@@ -156,32 +163,33 @@ const App = () => {
   };
 
   const handlePianoClick = (note: string) => {
-    if (client) {
+    if (client && !intervalId) {
       setActiveKey(note);
-      setKeyPressTime(Date.now());
-      setHoldDuration(null);
+      setHoldDuration(0);
+      let currentDuration = 0; // Track duration locally
+      
+      const interval = setInterval(() => {
+        currentDuration += 10;
+        setHoldDuration(currentDuration);
+      }, 10);
+      
+      setIntervalId(interval);
       
       const handleMouseUp = () => {
-        // Always set duration to 500ms
-        const duration = 500;
-        setHoldDuration(duration);
+        if (interval) {
+          clearInterval(interval);
+        }
         
         const noteData = {
           note: note,
-          duration: duration
+          duration: currentDuration // Use local duration instead of state
         };
         
-        client.publish('piano', JSON.stringify(noteData), { qos: 1 }, (error) => {
-          if (error) {
-            console.error('MQTT publish error:', error);
-          } else {
-            console.log('Published message:', noteData);
-          }
-        });
-        
+        client.publish('piano', JSON.stringify(noteData), { qos: 1 });
         setDebug(prev => [...prev, noteData]);
         setActiveKey(null);
-        setKeyPressTime(null);
+        setIntervalId(null);
+        setHoldDuration(0);
         
         document.removeEventListener('mouseup', handleMouseUp);
       };
@@ -189,6 +197,8 @@ const App = () => {
       document.addEventListener('mouseup', handleMouseUp);
     }
   };
+  // Inside handleKeyUp or handleMouseUp
+
 
   return (
     <div style={pianoStyles.container}>
@@ -200,14 +210,9 @@ const App = () => {
             onMouseDown={() => handlePianoClick(key.note)}
           >
             <div>{key.note}</div>
-            {activeKey === key.note && keyPressTime && (
+            {activeKey === key.note && (
               <div style={{fontSize: '12px', color: key.isBlack ? '#fff' : '#000'}}>
-                500ms
-              </div>
-            )}
-            {holdDuration && key.note === activeKey && (
-              <div style={{fontSize: '12px', color: key.isBlack ? '#fff' : '#000'}}>
-                Held: 500ms
+                {holdDuration}ms
               </div>
             )}
           </div>
