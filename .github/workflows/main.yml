@@ -1,0 +1,57 @@
+name: React Build and Deploy
+
+on:
+  push:
+    branches:
+      - main # Faqat "main" branchga push qilinganda trigger bo‘ladi
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Kodni yuklash
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # 2. Node.js o'rnatish
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22 # React uchun mos Node.js versiyasi
+
+      # 3. React loyihasini build qilish
+      - name: Install dependencies and build
+        run: |
+          echo "Installing dependencies..."
+          npm install
+          echo "Building project..."
+          npm run build || echo "Build failed"
+          echo "Build process complete."
+          echo "Build directory contents:"
+          ls -la dist
+
+      # 4. Build katalogni tekshirish
+      - name: Verify build directory
+        run: |
+          echo "Verifying build directory..."
+          if [ ! -d "dist" ]; then
+            echo "Build directory not found!"
+            exit 1
+          fi
+          echo "Build directory exists."
+
+      # 5. Serverga deploy qilish
+      - name: Deploy to Server
+        env:
+          HOST: 100.42.181.66 # Server IP manzili
+          USER: root # Server foydalanuvchi nomi
+          PASSWORD: ${{ secrets.SSH_PASSWORD }} # GitHub Secrets'da saqlangan SSH parol
+        run: |
+          echo "Installing sshpass..."
+          sudo apt-get install -y sshpass
+          echo "Copying files to server..."
+          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no -r ./dist/* $USER@$HOST:/var/www/html
+          echo "Restarting Nginx on server..."
+          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no $USER@$HOST "sudo systemctl restart nginx"
+          echo "Deployment complete."
