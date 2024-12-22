@@ -32,11 +32,10 @@ const mqttConfig = {
 const App = () => {
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [holdDuration, setHoldDuration] = useState<number>(0);
-  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
-  const [debug, setDebug] = useState<{ note: string; duration: number }[]>([]);
+  const [holdStartTime, setHoldStartTime] = useState<number | null>(null); // Start time
+  const [volume, setVolume] = useState<number>(50); // Default volume
 
-  // 1. MQTT ulanish
+  // ✅ MQTT ulanish
   useEffect(() => {
     const mqttClient = mqtt.connect(`${mqttConfig.protocol}://${mqttConfig.host}:${mqttConfig.port}`, {
       clientId: mqttConfig.clientId,
@@ -47,97 +46,114 @@ const App = () => {
     });
     mqttClient.on('error', (err) => console.error('MQTT error:', err));
     setClient(mqttClient);
-    
-    // Fixed cleanup function
+
     return () => {
       mqttClient.end();
     };
   }, []);
 
-  // 2. Yordamchi funksiyalar
+  // ✅ Nota Boshqarish
   const startNote = (note: string) => {
-    if (!client || intervalId) return;
+    if (!client || activeKey === note) return;
     setActiveKey(note);
-    setHoldDuration(0);
-    const newInterval = setInterval(() => {
-      setHoldDuration((prev) => prev + 10); // 10ms
-    }, 10);
-    setIntervalId(newInterval);
+    setHoldStartTime(Date.now());
+    console.log(`Note started: ${note}`);
   };
 
   const stopNote = (note: string) => {
-    if (!intervalId || !client) return;
-    clearInterval(intervalId);
-    setIntervalId(null);
+    if (!client || activeKey !== note || holdStartTime === null) return;
 
+    const holdDuration = Date.now() - holdStartTime; // Calculate hold duration
     const noteData = { note, duration: holdDuration };
+    console.log('Publishing note:', noteData);
     client.publish('piano', JSON.stringify(noteData), { qos: 1 });
-    setDebug((prev) => [...prev, noteData]);
 
     setActiveKey(null);
-    setHoldDuration(0);
+    setHoldStartTime(null);
   };
 
-  // 3. Klaviatura hodisalari
+  // ✅ Ovoz Balandligini O'zgartirish
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseInt(e.target.value);
+    setVolume(newVolume);
+
+    if (client) {
+      const volumeData = { volume: newVolume };
+      console.log('Publishing volume:', volumeData);
+      client.publish('piano', JSON.stringify(volumeData), { qos: 1 });
+    }
+  };
+
+  // ✅ Klaviatura Boshqaruvi
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const keyObj = pianoKeys.find((k) => k.key === e.key.toLowerCase());
-      if (keyObj) startNote(keyObj.note);
+      if (keyObj && !activeKey) startNote(keyObj.note);
     };
+
     const handleKeyUp = (e: KeyboardEvent) => {
       const keyObj = pianoKeys.find((k) => k.key === e.key.toLowerCase());
       if (keyObj) stopNote(keyObj.note);
     };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [client, intervalId, holdDuration]);
-
-  // 4. Mishka hodisalari (div ustida)
-  const handleMouseDown = (note: string) => startNote(note);
-  const handleMouseUp = (note: string) => stopNote(note);
+  }, [client, activeKey, holdStartTime]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ display: 'flex' }}>
+    <div style={styles.scene}>
+      {/* 🎹 Piano Keys */}
+      <div style={styles.piano}>
         {pianoKeys.map((key) => {
           const isActive = activeKey === key.note;
           return (
             <div
               key={key.note}
               style={{
-                width: key.isBlack ? '30px' : '50px',
-                height: key.isBlack ? '120px' : '200px',
-                backgroundColor: key.isBlack ? (isActive ? '#333' : '#000') : (isActive ? '#eee' : '#fff'),
-                border: '1px solid #000',
-                margin: '0 2px',
-                cursor: 'pointer',
-                transition: 'all 0.1s',
-                transform: isActive ? 'translateY(4px)' : 'none'
+                ...styles.key,
+                backgroundColor: key.isBlack ? (isActive ? '#555' : '#000') : (isActive ? '#ccc' : '#fff'),
+                transform: key.isBlack
+                  ? 'translateY(-10px) rotateX(20deg)'
+                  : 'rotateX(20deg)'
               }}
-              onMouseDown={() => handleMouseDown(key.note)}
-              onMouseUp={() => handleMouseUp(key.note)}
+              onMouseDown={() => startNote(key.note)}
+              onMouseUp={() => stopNote(key.note)}
             >
-              <div>{key.note}</div>
-              {isActive && <div style={{ fontSize: '12px' }}>{holdDuration}ms</div>}
+              {key.note}
             </div>
           );
         })}
       </div>
 
-      <div style={{ marginTop: '20px', width: '300px', maxHeight: '200px', overflowY: 'auto' }}>
-        <h3>Debug Log:</h3>
-        {debug.map((entry, idx) => (
-          <div key={idx}>
-            Note: {entry.note} - Duration: {entry.duration}ms
-          </div>
-        ))}
+      {/* 🎚️ Volume Slider */}
+      <div style={styles.sliderContainer}>
+        <h3 style={styles.sliderLabel}>Volume: {volume}</h3>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={volume}
+          onChange={handleVolumeChange}
+          style={styles.slider}
+        />
       </div>
     </div>
   );
+};
+
+// ✅ Styles
+const styles: { [key: string]: React.CSSProperties } = {
+  scene: { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh' },
+  piano: { display: 'flex', justifyContent: 'center' },
+  key: { width: '50px', height: '200px', textAlign: 'center', lineHeight: '200px' },
+  sliderContainer: { marginTop: '20px' },
+  slider: { width: '200px' },
+  sliderLabel: { marginTop: '10px' }
 };
 
 export default App;
