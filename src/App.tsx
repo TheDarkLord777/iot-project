@@ -32,10 +32,9 @@ const mqttConfig = {
 const App = () => {
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [holdStartTime, setHoldStartTime] = useState<number | null>(null); // Start time
-  const [volume, setVolume] = useState<number>(50); // Default volume
+  const [holdStartTime, setHoldStartTime] = useState<number | null>(null);
+  const [volume, setVolume] = useState<number>(50);
 
-  // ✅ MQTT ulanish
   useEffect(() => {
     const mqttClient = mqtt.connect(`${mqttConfig.protocol}://${mqttConfig.host}:${mqttConfig.port}`, {
       clientId: mqttConfig.clientId,
@@ -52,7 +51,6 @@ const App = () => {
     };
   }, []);
 
-  // ✅ Nota Boshqarish
   const startNote = (note: string) => {
     if (!client || activeKey === note) return;
     setActiveKey(note);
@@ -63,7 +61,7 @@ const App = () => {
   const stopNote = (note: string) => {
     if (!client || activeKey !== note || holdStartTime === null) return;
 
-    const holdDuration = Date.now() - holdStartTime; // Calculate hold duration
+    const holdDuration = Date.now() - holdStartTime;
     const noteData = { note, duration: holdDuration };
     console.log('Publishing note:', noteData);
     client.publish('piano', JSON.stringify(noteData), { qos: 1 });
@@ -72,7 +70,6 @@ const App = () => {
     setHoldStartTime(null);
   };
 
-  // ✅ Ovoz Balandligini O'zgartirish
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(e.target.value);
     setVolume(newVolume);
@@ -84,7 +81,6 @@ const App = () => {
     }
   };
 
-  // ✅ Klaviatura Boshqaruvi
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const keyObj = pianoKeys.find((k) => k.key === e.key.toLowerCase());
@@ -107,30 +103,32 @@ const App = () => {
 
   return (
     <div style={styles.scene}>
-      {/* 🎹 Piano Keys */}
-      <div style={styles.piano}>
-        {pianoKeys.map((key) => {
-          const isActive = activeKey === key.note;
-          return (
-            <div
-              key={key.note}
-              style={{
-                ...styles.key,
-                backgroundColor: key.isBlack ? (isActive ? '#555' : '#000') : (isActive ? '#ccc' : '#fff'),
-                transform: key.isBlack
-                  ? 'translateY(-10px) rotateX(20deg)'
-                  : 'rotateX(20deg)'
-              }}
-              onMouseDown={() => startNote(key.note)}
-              onMouseUp={() => stopNote(key.note)}
-            >
-              {key.note}
-            </div>
-          );
-        })}
+      <div style={styles.perspective}>
+        <div style={styles.piano}>
+          {pianoKeys.map((key) => {
+            const isActive = activeKey === key.note;
+            return (
+              <div
+                key={key.note}
+                style={{
+                  ...styles.key,
+                  ...styles.keyCommon,
+                  ...(key.isBlack ? styles.blackKey : styles.whiteKey),
+                  ...(isActive && (key.isBlack ? styles.activeBlackKey : styles.activeWhiteKey))
+                }}
+                onMouseDown={() => startNote(key.note)}
+                onMouseUp={() => stopNote(key.note)}
+              >
+                <div style={styles.keyFront}>{key.note}</div>
+                <div style={styles.keyTop} />
+                <div style={styles.keyLeft} />
+                <div style={styles.keyRight} />
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* 🎚️ Volume Slider */}
       <div style={styles.sliderContainer}>
         <h3 style={styles.sliderLabel}>Volume: {volume}</h3>
         <input
@@ -146,14 +144,118 @@ const App = () => {
   );
 };
 
-// ✅ Styles
 const styles: { [key: string]: React.CSSProperties } = {
-  scene: { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh' },
-  piano: { display: 'flex', justifyContent: 'center' },
-  key: { width: '50px', height: '200px', textAlign: 'center', lineHeight: '200px' },
-  sliderContainer: { marginTop: '20px' },
-  slider: { width: '200px' },
-  sliderLabel: { marginTop: '10px' }
+  scene: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    height: '100vh',
+    backgroundColor: '#1a1a1a',
+    padding: '50px'
+  },
+  perspective: {
+    perspective: '1000px',
+    transformStyle: 'preserve-3d'
+  },
+  piano: {
+    display: 'flex',
+    position: 'relative',
+    transformStyle: 'preserve-3d',
+    transform: 'rotateX(30deg)',
+    padding: '20px',
+    backgroundColor: '#333',
+    borderRadius: '10px',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+  },
+  keyCommon: {
+    position: 'relative',
+    transformStyle: 'preserve-3d',
+    transition: 'all 0.1s ease',
+    cursor: 'pointer'
+  },
+  key: {
+    width: '60px',
+    height: '200px',
+    margin: '0 2px'
+  },
+  whiteKey: {
+    backgroundColor: '#fff',
+    zIndex: 1,
+    boxShadow: '0 5px 15px rgba(0,0,0,0.2)'
+  },
+  blackKey: {
+    backgroundColor: '#000',
+    height: '120px',
+    width: '40px',
+    marginLeft: '-20px',
+    marginRight: '-20px',
+    zIndex: 2,
+    transform: 'translateZ(20px)',
+    boxShadow: '0 5px 15px rgba(0,0,0,0.5)'
+  },
+  activeWhiteKey: {
+    backgroundColor: '#e6e6e6',
+    transform: 'translateZ(-5px)',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+  },
+  activeBlackKey: {
+    backgroundColor: '#333',
+    transform: 'translateZ(15px)',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.5)'
+  },
+  keyFront: {
+    position: 'absolute',
+    bottom: '10px',
+    width: '100%',
+    textAlign: 'center',
+    color: '#666',
+    fontSize: '12px'
+  },
+  keyTop: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'inherit',
+    transform: 'rotateX(-90deg) translateZ(0)',
+    transformOrigin: 'top'
+  },
+  keyLeft: {
+    position: 'absolute',
+    width: '10px',
+    height: '100%',
+    left: '-10px',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    transform: 'rotateY(90deg)',
+    transformOrigin: 'right'
+  },
+  keyRight: {
+    position: 'absolute',
+    width: '10px',
+    height: '100%',
+    right: '-10px',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    transform: 'rotateY(-90deg)',
+    transformOrigin: 'left'
+  },
+  sliderContainer: {
+    marginTop: '50px',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: '20px',
+    borderRadius: '10px'
+  },
+  slider: {
+    width: '200px',
+    appearance: 'none',
+    height: '5px',
+    background: '#555',
+    borderRadius: '5px',
+    outline: 'none'
+  },
+  sliderLabel: {
+    color: '#fff',
+    marginBottom: '10px',
+    textAlign: 'center'
+  }
 };
 
 export default App;
