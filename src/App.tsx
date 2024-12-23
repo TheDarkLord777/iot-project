@@ -37,6 +37,8 @@ const App = () => {
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
   const [activeKeys, setActiveKeys] = useState<Record<string, ActiveKey>>({});
   const [volume, setVolume] = useState<number>(50);
+  const [clickSound] = useState(() => new Audio('/click.wav')); // Fixed file extension
+  const [releaseSound] = useState(() => new Audio('/rel.wav')); // Fixed file extension
 
   useEffect(() => {
     const mqttClient = mqtt.connect(`${mqttConfig.protocol}://${mqttConfig.host}:${mqttConfig.port}`, {
@@ -57,6 +59,11 @@ const App = () => {
   const startNote = (note: string) => {
     if (!client) return;
     
+    // Play click sound
+    clickSound.currentTime = 0;
+    clickSound.volume = volume / 100;
+    clickSound.play().catch(err => console.error('Error playing click sound:', err));
+    
     setActiveKeys((prev: Record<string, ActiveKey>) => ({
       ...prev,
       [note]: { startTime: Date.now() }
@@ -70,6 +77,11 @@ const App = () => {
 
   const stopNote = (note: string) => {
     if (!client || !activeKeys[note]) return;
+
+    // Play release sound
+    releaseSound.currentTime = 0;
+    releaseSound.volume = (volume / 100) * 0.7; // Slightly quieter on release
+    releaseSound.play().catch(err => console.error('Error playing release sound:', err));
 
     const holdDuration = Date.now() - activeKeys[note].startTime;
     const noteData = { note, action: 'stop', duration: holdDuration };
