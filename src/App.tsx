@@ -29,10 +29,13 @@ const mqttConfig = {
   clientId: `piano_client_${Math.random().toString(16).slice(2, 8)}`
 };
 
+interface ActiveKey {
+  startTime: number;
+}
+
 const App = () => {
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [holdStartTime, setHoldStartTime] = useState<number | null>(null);
+  const [activeKeys, setActiveKeys] = useState<Record<string, ActiveKey>>({});
   const [volume, setVolume] = useState<number>(50);
 
   useEffect(() => {
@@ -52,22 +55,32 @@ const App = () => {
   }, []);
 
   const startNote = (note: string) => {
-    if (!client || activeKey === note) return;
-    setActiveKey(note);
-    setHoldStartTime(Date.now());
-    console.log(`Note started: ${note}`);
+    if (!client) return;
+    
+    setActiveKeys((prev: Record<string, ActiveKey>) => ({
+      ...prev,
+      [note]: { startTime: Date.now() }
+    }));
+    
+    // Send start note message
+    const noteData = { note, action: 'start', volume };
+    console.log('Publishing note start:', noteData);
+    client.publish('piano', JSON.stringify(noteData), { qos: 1 });
   };
 
   const stopNote = (note: string) => {
-    if (!client || activeKey !== note || holdStartTime === null) return;
+    if (!client || !activeKeys[note]) return;
 
-    const holdDuration = Date.now() - holdStartTime;
-    const noteData = { note, duration: holdDuration };
-    console.log('Publishing note:', noteData);
+    const holdDuration = Date.now() - activeKeys[note].startTime;
+    const noteData = { note, action: 'stop', duration: holdDuration };
+    console.log('Publishing note stop:', noteData);
     client.publish('piano', JSON.stringify(noteData), { qos: 1 });
 
-    setActiveKey(null);
-    setHoldStartTime(null);
+    setActiveKeys((prev: Record<string, ActiveKey>) => {
+      const newKeys = { ...prev };
+      delete newKeys[note];
+      return newKeys;
+    });
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,7 +97,7 @@ const App = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const keyObj = pianoKeys.find((k) => k.key === e.key.toLowerCase());
-      if (keyObj && !activeKey) startNote(keyObj.note);
+      if (keyObj && !activeKeys[keyObj.note]) startNote(keyObj.note);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -99,14 +112,14 @@ const App = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [client, activeKey, holdStartTime]);
+  }, [client, activeKeys]);
 
   return (
     <div style={styles.scene}>
       <div style={styles.perspective}>
         <div style={styles.piano}>
           {pianoKeys.map((key) => {
-            const isActive = activeKey === key.note;
+            const isActive = !!activeKeys[key.note];
             return (
               <div
                 key={key.note}
@@ -118,6 +131,7 @@ const App = () => {
                 }}
                 onMouseDown={() => startNote(key.note)}
                 onMouseUp={() => stopNote(key.note)}
+                onMouseLeave={() => activeKeys[key.note] && stopNote(key.note)}
               >
                 <div style={styles.keyFront}>{key.note}</div>
                 <div style={styles.keyTop} />
